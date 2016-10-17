@@ -1,0 +1,77 @@
+#include "hash.h"
+#include "mythreads.h"
+
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+
+int cnt;
+//Hashtable_t ht;
+
+void *mythread(void *arg)
+{
+	int i,d;
+#ifndef LOCK
+
+//	Pthread_mutex_lock(&lock);
+	while(cnt <= 1000)
+	{
+//		printf("(Lock)Before - tid : %d, cnt : %d\n",syscall(SYS_gettid),cnt);
+		Pthread_mutex_lock(&lock);
+		d = (rand()%1000+1);
+		ht_set(&ht, &d);
+		cnt++;
+		Pthread_mutex_unlock(&lock);
+//		printf("(Lock)After - tid : %d, cnt : %d\n",syscall(SYS_gettid),cnt);
+	}
+#else
+	while(cnt <= 1000)
+	{
+//		printf("(No lock)Before - tid : %d, cnt : %d\n",syscall(SYS_gettid),cnt);
+		d = rand()%1000000;
+		cnt++;
+//		printf("(No lock)After - tid : %d, cnt : %d\n",syscall(SYS_gettid),cnt);
+	}
+
+#endif
+}
+ 
+int main(int argc, char *argv[]) {
+
+	int i,num_of_thread;
+	double gap;
+	pthread_t *parr;
+//	Hashtable_t hash;
+
+	time_t start=0,end=0;
+
+	if(argc != 2)
+	{
+		fprintf(stderr,"usage : ./filename number_of_thread\n");
+		exit(1);
+	}
+
+//    init_skiplist(&sl);
+	cnt = 1;
+	num_of_thread = atoi(argv[1]);
+	parr = (pthread_t *)malloc(sizeof(pthread_t)*num_of_thread);
+//	ht_create(&ht,10);
+	
+	srand(time(NULL));
+	start = clock();
+	for(i=0;i<num_of_thread;i++)
+	{
+		Pthread_create(&parr[i],NULL,mythread,NULL);
+	}
+	for(i=0;i<num_of_thread;i++)
+	{
+		Pthread_join(parr[i],NULL);
+	}
+
+	end = clock();
+
+	gap = (double)(end-start)/(CLOCKS_PER_SEC);
+
+	printf("%5fs\n",gap);
+//	_traverse();
+
+    return 0;
+} 
