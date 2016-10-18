@@ -36,6 +36,7 @@ typedef struct Node_s {
 typedef struct Skiplist_s {
     struct Node_s *header;              /* list Header */
     int listlevel;              /* current level of list */
+	int updated;
 } Skiplist_t;
 
 int init_skiplist(Skiplist_t *sl) {
@@ -44,6 +45,7 @@ int init_skiplist(Skiplist_t *sl) {
 	
     Node_t *header = (Node_t *) malloc(sizeof(Node_t));
     sl->header = header;
+	sl->updated = 0;
     header->key = INT_MAX;
     header->forward = (Node_t **) malloc(sizeof(Node_t*) * (MAXLEVEL + 1));
     for (i = 0; i <= MAXLEVEL; i++) {
@@ -53,10 +55,6 @@ int init_skiplist(Skiplist_t *sl) {
     sl->listlevel = 1;
 
 	return 1;
-}
-
-inline void MemoryBarrier() {
-  __asm__ __volatile__("" : : : "memory");
 }
 
 static void _dump(Skiplist_t *sl) {
@@ -101,7 +99,7 @@ Node_t *_search(Skiplist_t *sl, int key)
     for (i = sl->listlevel; i >= 1; i--) {
         while (x->forward[i]->key < key)
             x = x->forward[i];
-		
+
 		if(x->forward[i]->key == key)
 		{
 			if(x->forward[i]->valid == 1)
@@ -129,22 +127,23 @@ Node_t *update_node(int k, int level, char *d)
 
 Status _insert(Skiplist_t *sl, int k, char *d) {
 
-    Node_t *update[MAXLEVEL + 1];
+    Node_t *update[MAXLEVEL + 1] = { 0 };
     Node_t *x;
 	Node_t *tmp;
-    int i, level;
+    int i, level,oldk;
 
-	x = sl->header;
+retry :
 	
-	Pthread_mutex_lock(&lock);
+	x = sl->header;
+
     for (i = sl->listlevel; i >= 1; i--) {
         while (x->forward[i]->key < k)
             x = x->forward[i];
         update[i] = x;
     }
-	Pthread_mutex_unlock(&lock);
-	x = x->forward[1];
 
+	x = x->forward[1];
+	oldk = x->key;
 	// duplicate
     if (k == x->key) {
 		Data_t *newdata = (Data_t *)malloc(sizeof(Data_t));		
@@ -161,23 +160,26 @@ Status _insert(Skiplist_t *sl, int k, char *d) {
             sl->listlevel = level;
         }	
 
-		Pthread_mutex_lock(&lock);
 		tmp = update_node(k,level,d);
-		Pthread_mutex_unlock(&lock);
 
 #ifdef WLOCK
 //		Pthread_mutex_lock(&lock);
 		for(i = 1; i <= level; i++) {
 	    	tmp->forward[i] = update[i]->forward[i];
-	        update[i]->forward[i] = tmp;
+	        update[i]->forward[i] = tmp; 
 	 	}
 //		Pthread_mutex_unlock(&lock);
 #else
-		Pthread_mutex_lock(&lock);
+
+//		Pthread_mutex_lock(&lock);
 
 		for (i = 1; i <= level; i++) {
 //			Pthread_mutex_lock(&lock);
 
+			if((update[i]==0x0) ||(oldk != update[i]->forward[i]->key))
+			{
+				goto retry;
+			}
 			tmp->forward[i] = update[i]->forward[i];
 			update[i]->forward[i] = tmp;		
 
@@ -185,7 +187,7 @@ Status _insert(Skiplist_t *sl, int k, char *d) {
 //			goto retry;
 	 	}
 
-		Pthread_mutex_unlock(&lock);
+//		Pthread_mutex_unlock(&lock);
 #endif
     }
 //	_dump(sl);

@@ -79,7 +79,7 @@ int main(int argc, char *argv[]) {
 	_dump(&skiplist);
 
 	printf("\n searching \n");
-	for(i=600;i<900;i++)
+	for(i=100;i<1500;i++)
 	{
 		v = _search(&skiplist,i);
 		if(v != NULL)
