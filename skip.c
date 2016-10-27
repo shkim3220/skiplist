@@ -35,24 +35,28 @@ int main(int argc, char *argv[]) {
 
 	int i,r,num_of_thread;
 	double gap;
+	char fpath[100];
 	pthread_t *parr;
 	Node_t *v;
 //	Hashtable_t hash;
 
 	time_t start=0,end=0;
 
-	if(argc != 2)
+	if(argc < 2)
 	{
-		fprintf(stderr,"usage : ./filename number_of_thread\n");
+		fprintf(stderr,"usage : ./filename workload number_of_thread\n");
 		exit(1);
 	}
 
     init_skiplist(&skiplist);
 	cnt = 1;
-	num_of_thread = atoi(argv[1]);
+	num_of_thread = atoi(argv[2]);
 	parr = (pthread_t *)malloc(sizeof(pthread_t)*num_of_thread);
 
-	if(!(fp = fopen("xac","r"))){
+	strcpy(fpath,"workload/");
+	strcat(fpath,argv[1]);
+
+	if(!(fp = fopen(fpath,"r"))){
 		printf("Error!\n");
 		exit(1);
 	}
@@ -66,26 +70,26 @@ int main(int argc, char *argv[]) {
 		Pthread_create(&parr[i],NULL,mythread,NULL);
 	}
 
-	end = clock();
-
 	for(i=0;i<num_of_thread;i++)
 	{
 		Pthread_join(parr[i],NULL);
 	}
 
+	end = clock();
+
 	gap = (double)(end-start)/(CLOCKS_PER_SEC);
 
-	printf("Finish\n");
+//	printf("Finish\n");
 	_dump(&skiplist);
 
-	printf("\n searching \n");
-	for(i=100;i<1500;i++)
-	{
-		v = _search(&skiplist,i);
-		if(v != NULL)
-			printf("Final : key :%d, value : %s\n",v->key,v->data->value);
-	}
-
+//	printf("\n searching \n");
+//	for(i=1;i<30000000;i++)
+//	{
+//		v = _search(&skiplist,i);
+//		if(v != NULL)
+//			printf("Final : key :%d, value : %s\n",v->key,v->data->value);
+//	}
+//
 	printf("%5fs\n",gap);
 //	_traverse();
 

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdatomic.h>
 #include <string.h>
 #include <time.h>
 #include <limits.h>
@@ -36,7 +37,6 @@ typedef struct Node_s {
 typedef struct Skiplist_s {
     struct Node_s *header;              /* list Header */
     int listlevel;              /* current level of list */
-	int updated;
 } Skiplist_t;
 
 int init_skiplist(Skiplist_t *sl) {
@@ -45,7 +45,6 @@ int init_skiplist(Skiplist_t *sl) {
 	
     Node_t *header = (Node_t *) malloc(sizeof(Node_t));
     sl->header = header;
-	sl->updated = 0;
     header->key = INT_MAX;
     header->forward = (Node_t **) malloc(sizeof(Node_t*) * (MAXLEVEL + 1));
     for (i = 0; i <= MAXLEVEL; i++) {
@@ -125,6 +124,23 @@ Node_t *update_node(int k, int level, char *d)
 		return tmp;
 }
 
+
+int CAS(Node_t *node, int oldval, Node_t *new_next)
+{
+	int ret = 1;
+//	ATOMIC();
+	int old_reg_val = node->forward[1]->key;
+
+	if (old_reg_val == oldval)
+		node->forward[1] = new_next;
+	else
+		ret = 0;
+//	END_ATOMIC();
+	
+	return ret;
+}
+
+
 Status _insert(Skiplist_t *sl, int k, char *d) {
 
     Node_t *update[MAXLEVEL + 1] = { 0 };
@@ -176,12 +192,13 @@ retry :
 		for (i = 1; i <= level; i++) {
 //			Pthread_mutex_lock(&lock);
 
-			if((update[i]==0x0) ||(oldk != update[i]->forward[i]->key))
-			{
-				goto retry;
-			}
+//			if(update[i]==0x0)
+//				goto retry;
+
 			tmp->forward[i] = update[i]->forward[i];
-			update[i]->forward[i] = tmp;		
+//			update[i]->forward[i] = tmp;
+			if((update[i] == 0x0)||!(CAS(update[i],oldk,tmp)))
+				goto retry;
 
 //			Pthread_mutex_unlock(&lock);
 //			goto retry;
