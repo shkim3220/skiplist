@@ -5,6 +5,17 @@
 #include <assert.h>
 #include <sched.h>
 
+void Pthread_cond_wait(pthread_cond_t *cv,pthread_mutex_t *mutex)
+{
+	int rc = pthread_cond_wait(cv,mutex);
+	assert(rc == 0);
+}
+void Pthread_cond_broadcast(pthread_cond_t *cv)
+{
+	int rc = pthread_cond_broadcast(cv);
+	assert(rc == 0);
+}
+
 void Pthread_mutex_lock(pthread_mutex_t *mutex)
 {
    int rc = pthread_mutex_lock(mutex);

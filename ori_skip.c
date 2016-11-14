@@ -1,5 +1,5 @@
 //#include "hash.h"
-#include "skip.h"
+#include "ori_skip.h"
 
 FILE *fp,*fp2;
 Skiplist_t skiplist;
@@ -20,10 +20,11 @@ void *insert_thread(void *arg)
 
 	while(fgets(str,255,fp)!=NULL)
 	{
+		Pthread_mutex_lock(&lock2);
 		strtok_r(str,"\t",&s);
 		_insert(&skiplist,atoi(str),s);
+		Pthread_mutex_unlock(&lock2);
 	}
-
 	end = clock();
 
 	gap[*in] = (double)(end-start)/(CLOCKS_PER_SEC);
@@ -39,36 +40,19 @@ void *delete_thread(void *arg)
 
 	start = clock();
 
+	Pthread_mutex_lock(&lock2);
+
 	while(fgets(str,255,fp2)!=NULL)
 	{
 		strtok_r(str,"\t",&s);
 		_delete(&skiplist,atoi(str));
 	}
 
+	Pthread_mutex_unlock(&lock2);
+
 	end = clock();
 
 	gap[*in] = (double)(end-start)/(CLOCKS_PER_SEC);
-
-}
-
-void search()
-{
-	Node_t *x;
-	char *s;
-	char str[255];
-
-	while(fgets(str,255,fp)!=NULL)
-	{
-		strtok_r(str,"\t",&s);
-		if((x=_search(&skiplist,atoi(str)))==NULL)
-		{
-//			printf("search(%d) - Not found\n",atoi(str));
-		}
-		else
-		{
-//			printf("search(%d) - key : %d\n",atoi(str),x->key);
-		}
-	}
 
 }
 
@@ -82,6 +66,8 @@ int main(int argc, char *argv[]) {
 	pthread_attr_t attr;
 	Node_t *v;
 //	Hashtable_t hash;
+
+	time_t start=0,end=0;
 
 	if(argc < 2)
 	{
@@ -98,13 +84,15 @@ int main(int argc, char *argv[]) {
     init_skiplist(&skiplist);
 	num_of_thread = atoi(argv[2]);
 	parr = (pthread_t *)malloc(sizeof(pthread_t)*num_of_thread);
+
 	srand(time(NULL));
 
 	strcpy(fpath,"workload/");
-	strcpy(fpath2,"workload/");
-
 	strcat(fpath,argv[1]);
-	strcat(fpath2,argv[3]);	
+
+	strcpy(fpath2,"workload/");
+	strcat(fpath2,argv[1]);
+
 
 	if(!(fp = fopen(fpath,"r"))){
 		printf("Error!\n");
@@ -120,7 +108,6 @@ int main(int argc, char *argv[]) {
 //	printf("Number of thread : %d\n",num_of_thread);
 
 // For Insert only
-	
 /*
 	for(i=0;i<num_of_thread;i++)
 	{
@@ -133,6 +120,7 @@ int main(int argc, char *argv[]) {
 		Pthread_join(parr[i],NULL);
 	}
 */
+//	_dump(&skiplist);
 
 //	parr = (pthread_t *)malloc(sizeof(pthread_t)*num_of_thread);
 
@@ -148,6 +136,8 @@ int main(int argc, char *argv[]) {
 		Pthread_join(parr[i],NULL);
 	}
 
+//	_dump(&skiplist);
+//	printf("-------------------------------\n");
 	fseek(fp,0,SEEK_SET);
 
 	for(i=0;i<num_of_thread;i++)
@@ -171,7 +161,6 @@ int main(int argc, char *argv[]) {
 	for(i=0;i<num_of_thread;i++)
 	{
 		thread_arg[i] = i;
-
 		if((thread_arg[i]%2) == 0)
 			Pthread_create(&parr[i],NULL,insert_thread,&thread_arg[i]);
 		else

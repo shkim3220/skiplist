@@ -21,6 +21,7 @@ typedef enum Status{
 
 /* levels range from (0 .. MAXLEVEL) */
 #define MAXLEVEL 15
+#define THREAD_MAX 65
 
 typedef struct Data_s {
 	char value[255];
@@ -60,27 +61,19 @@ static void _dump(Skiplist_t *sl) {
     Node_t *x = sl->header;
 
 	int i;
-/*
+
 	for (i = sl->listlevel; i >= 1; i--) {
     	while (x&&x->forward[i] != sl->header)
 		{
-			printf("key[%d]->", x->forward[i]->key);
-        	x = x->forward[i];
+			if(x->forward[i]->valid == 1)
+			{
+				printf("key[%d]->", x->forward[i]->key);
+			}
+			x = x->forward[i];
 		}
-		
     printf("NIL\n");
 	x= sl->header;
-     
     }
-*/
-	while (x&&x->forward[1] != sl->header)
-		{
-			printf("key[%d]\n", x->forward[1]->key);
-        	x = x->forward[1];
-		}
-		
-    printf("NIL\n");
-
 
 }
 
@@ -102,112 +95,119 @@ Node_t *_search(Skiplist_t *sl, int key)
 		if(x->forward[i]->key == key)
 		{
 			if(x->forward[i]->valid == 1)
+			{
 				return x->forward[i];
-			else
+			}
+			else if(x->forward[i]->valid == 0)
+			{
 				return NULL;
+			}
 		}
     }
     return NULL;
 }
 
-Node_t *update_node(int k, int level, char *d)
+void make_node(int key, int level,Node_t **node, Data_t **data,  char *d)
 {
-		Node_t *tmp;
-		Data_t *newdata = (Data_t *)malloc(sizeof(Data_t));
-		strcpy(newdata->value,d); 
-        tmp = (Node_t *) malloc(sizeof(Node_t));
-	    tmp->key = k;
-		tmp->data = newdata;
-		tmp->valid = 1;
-		tmp->forward = (Node_t **)malloc(sizeof(Node_t*) * (level +1));
+		*node = (Node_t *)malloc(sizeof(Node_t));
+		*data = (Data_t *)malloc(sizeof(Data_t));
 
-		return tmp;
+		strcpy((*data)->value,d); 
+	    (*node)->key = key;
+		(*node)->data = *data;
+		(*node)->valid = 1;
+		(*node)->forward = (Node_t **)malloc(sizeof(Node_t*) * (level +1));
+
+/*
+		strcpy((*data)->value,d); 
+	    node->key = key;
+		node->data = *data;
+		node->valid = 1;
+
+		return node;
+*/
 }
 
 
-int CAS(Node_t *node, int oldval, Node_t *new_next)
+int CAS(Node_t **cur_node, Node_t *old_node, Node_t **new_node)
 {
-	int ret = 1;
-//	ATOMIC();
-	int old_reg_val = node->forward[1]->key;
+	int ret,f=0;
+//	printf("1(In CAS) cur : %p, old : %p, new %p\n",*cur_node,old_node,*new_node);
 
-	if (old_reg_val == oldval)
-		node->forward[1] = new_next;
-	else
-		ret = 0;
-//	END_ATOMIC();
-	
+	__asm__ __volatile__(  
+            "LOCK\n\t"  
+            "CMPXCHG %3, %0\n\t"
+			"jnz DONE\n\t"
+            "movl %4, %1\n\t " 
+			"DONE:\n\t" 
+            :"=m"(*cur_node),"=g"(ret)  
+            :"a" (old_node),"r" (*new_node),"r"(f),"m"(*cur_node)  
+            :"memory" 
+            );
+
+//	printf("2(In CAS) cur : %p, old : %p, new %p\n",*cur_node,old_node,*new_node);
+
+//	printf("%d\n",ret);
+
 	return ret;
 }
-
-
 Status _insert(Skiplist_t *sl, int k, char *d) {
 
     Node_t *update[MAXLEVEL + 1] = { 0 };
-    Node_t *x;
-	Node_t *tmp;
-    int i, level,oldk;
+	Node_t *expected[MAXLEVEL + 1] = { 0 };
+    Node_t *x,*node;
+	Data_t *data;
+    int i, level;
+
+	level = rand_level();
+
+	if(level > sl->listlevel)
+	{
+		for(i= sl->listlevel +1; i <= level; i++)
+		{
+			update[i] = sl->header;
+		}
+		sl->listlevel = level;
+	}
+
+//	node->forward = (Node_t **)malloc(sizeof(Node_t*) * (level +1));
 
 retry :
-	
+
+	make_node(k,level,&node,&data,d);
+
 	x = sl->header;
 
     for (i = sl->listlevel; i >= 1; i--) {
         while (x->forward[i]->key < k)
             x = x->forward[i];
         update[i] = x;
+		expected[i]= x->forward[i] ;
     }
 
 	x = x->forward[1];
-	oldk = x->key;
+
 	// duplicate
     if (k == x->key) {
-		Data_t *newdata = (Data_t *)malloc(sizeof(Data_t));		
-		strcpy(newdata->value,d);
-		x->data = newdata;
+		if(x->valid == 0)
+			x->valid = 1;
+		strcpy(data->value,d);
+		x->data = data;
         return STATUS_OK;
     } else {	
-        level = rand_level();
-
-        if (level > sl->listlevel) {
-            for (i = sl->listlevel + 1; i <= level; i++) {
-                update[i] = sl->header;
-            }
-            sl->listlevel = level;
-        }	
-
-		tmp = update_node(k,level,d);
-
-#ifdef WLOCK
-//		Pthread_mutex_lock(&lock);
-		for(i = 1; i <= level; i++) {
-	    	tmp->forward[i] = update[i]->forward[i];
-	        update[i]->forward[i] = tmp; 
-	 	}
-//		Pthread_mutex_unlock(&lock);
-#else
-
-//		Pthread_mutex_lock(&lock);
 
 		for (i = 1; i <= level; i++) {
-//			Pthread_mutex_lock(&lock);
 
-//			if(update[i]==0x0)
-//				goto retry;
+			node->forward[i] = update[i]->forward[i];
 
-			tmp->forward[i] = update[i]->forward[i];
-//			update[i]->forward[i] = tmp;
-			if((update[i] == 0x0)||!(CAS(update[i],oldk,tmp)))
+			if((update[i] == 0x0)||(CAS(&(update[i]->forward[i]),expected[i],&node))==0?0:1)
+			{
+//				printf("%p , Retry\n",update[i]);
 				goto retry;
-
-//			Pthread_mutex_unlock(&lock);
-//			goto retry;
+			}
 	 	}
-
-//		Pthread_mutex_unlock(&lock);
-#endif
     }
-//	_dump(sl);
+
     return STATUS_OK;
 }
 /*
@@ -229,14 +229,15 @@ int _delete(Skiplist_t *sl, int key)
             x = x->forward[i];
 		if(x->forward[i]->key == key)
 		{
-	        update = x;
-			break;
+	        update = x->forward[i];
 		}
     }
 
-    x = x->forward[1];
-    if (x->key == key) {
-		x->valid = 0;
+
+    if (update->key == key) {
+		update->valid = 0;
+		return 0;
     }
-    return 1;
+
+	return 1;
 }
